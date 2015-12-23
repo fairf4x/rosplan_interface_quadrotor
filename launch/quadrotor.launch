@@ -1,0 +1,102 @@
+<launch>
+<node pkg="hector_costmap" type="hector_costmap" name="hector_costmap" output="screen" respawn="false">
+    <param name="cost_map_topic" value="cost_map" />
+    <param name="map_frame_id" value="map" />
+    <param name="local_transform_frame_id" value="base_footprint" />
+    <param name="initial_free_cells_radius" value="0.3" />
+    <param name="update_radius" value="4.0"/>
+    <param name="costmap_pub_freq" value="4.0" />
+    <param name="sys_msg_topic" value="syscommand" />
+
+    <param name="use_grid_map" value="true" />
+    <param name="grid_map_topic" value="scanmatcher_map" />
+
+    <param name="use_elevation_map" value="true" />
+    <param name="elevation_map_topic" value="elevation_map_local" />
+
+    <param name="use_cloud_map" value="false" />
+    <param name="cloud_topic" value="openni/depth/points" />
+
+<!-- Not necessary to set, set by dynamic reconfigure -->
+    <!--param name="max_delta_elevation" value="0.08"/-->
+    <!--param name="allow_elevation_map_to_clear_occupied_cells" value="true" /-->
+    <!--param name="max_clear_size" value="4" /-->
+    <!--param name="slize_min_height" value="0.3" /-->
+    <!--param name="slize_max_height" value="0.4" /-->
+<!-- Not necessary to set, set by scanmatcher -->
+    <!--param name="map_resolution" value="0.05" /-->
+    <!--param name="max_grid_size_x" value="1024" /-->
+    <!--param name="max_grid_size_y" value="1024" /-->
+<!-- Not necessary to set, set by elvation_mapping -->
+    <!-- param name="elevation_resolution" value="0.01" / -->
+</node>
+
+<node pkg="hector_driving_aid_markers" type="driving_aid_marker_node" name="hector_driving_aid_markers" output="screen">
+    <param name="left_side_y_outer" value="0.205"/>
+    <param name="left_side_y_inner" value="0.11"/>
+    <param name="right_side_y_outer" value="-0.205"/>
+    <param name="right_side_y_inner" value="-0.11"/>
+</node>
+
+<node pkg="nodelet" type="nodelet" name="ElevationMapping" args="load hector_elevation_mapping/ElevationMapping openni_nodelet_manager" output="screen">
+    <param name="elevation_resolution" value="0.01" />
+    <param name="elevation_zero_level" value="16384" />
+    <param name="min_observable_elevation" value="-1.0" />
+    <param name="max_observable_elevation" value="0.5" />
+    <param name="max_observable_distance" value="4.0" /> 
+    <param name="sensor_variance" value="0.001" />   
+    <param name="map_frame_id" value="map" />
+    <param name="local_map_frame_id" value="base_stabilized" />
+    <param name="local_elevation_map_topic" value="elevation_map_local" />
+    <param name="gloabl_elevation_map_topic" value="elevation_map_global" />
+    <param name="point_cloud_topic" value="openni/depth/points"/>
+    <param name="grid_map_topic" value="scanmatcher_map"/>
+    <param name="sys_msg_topic" value="syscommand" />
+    <param name="publish_poseupdate" value="false" />
+    <param name="poseupdate_pub_period" value="1.0" />
+    <param name="poseupdate_height_covariance" value="0.25" />
+    <param name="poseupdate_used_pattern_size" value="3" />
+<!-- Not necessary to set, set by scanmatcher -->
+    <!--param name="map_resolution" value="0.05" /-->
+    <!--param name="max_grid_size_x" value="1024" /-->
+    <!--param name="max_grid_size_y" value="1024" /-->
+</node>
+
+<node pkg="hector_elevation_mapping" type="ElevationMappingNode" name="ElevationMapping_1"  output="screen">
+    <param name="elevation_resolution" value="0.01" />
+    <param name="elevation_zero_level" value="16384" />
+    <param name="min_observable_elevation" value="-1.0" />
+    <param name="max_observable_elevation" value="0.5" />
+    <param name="max_observable_distance" value="4.0" /> 
+    <param name="sensor_variance" value="0.001" />   
+    <param name="map_frame_id" value="map" />
+    <param name="local_map_frame_id" value="base_stabilized" />
+    <param name="local_elevation_map_topic" value="elevation_map_local" />
+    <param name="gloabl_elevation_map_topic" value="elevation_map_global" />
+    <param name="point_cloud_topic" value="openni/depth/points"/>
+    <param name="grid_map_topic" value="scanmatcher_map"/>
+    <param name="sys_msg_topic" value="syscommand" />
+    <param name="publish_poseupdate" value="false" />
+    <param name="poseupdate_pub_period" value="1.0" />
+    <param name="poseupdate_height_covariance" value="0.25" />
+    <param name="poseupdate_used_pattern_size" value="3" />
+<!-- Not necessary to set, set by scanmatcher -->
+    <!--param name="map_resolution" value="0.05" /-->
+    <!--param name="max_grid_size_x" value="1024" /-->
+    <!--param name="max_grid_size_y" value="1024" /-->
+</node>
+
+<node pkg="hector_elevation_visualization" type="hector_elevation_visualization" name="hector_elevation_visualization" output="screen" respawn="false">
+    <param name="max_height_levels" value="10" />
+    <param name="max_height" value="1.0" />
+    <param name="elevation_map_frame_id" value="/elevation_map_local" />
+    <param name="sys_msg_topic" value="/syscommand" />
+</node>
+
+<node pkg="hector_exploration_node" type="exploration_planner_node" name="hector_exploration_node" output="screen">
+
+    <rosparam file="$(find hector_exploration_node)/config/costmap.yaml" command="load" />
+
+</node>
+
+</launch>
