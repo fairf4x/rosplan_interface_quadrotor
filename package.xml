@@ -1,13 +1,9 @@
 <?xml version="1.0"?>
 <package>
-  <name>test_quadrotor</name>
+  <name>rosplan_interface_quadrotor</name>
   <version>0.0.0</version>
-  <description>The test_quadrotor package</description>
-
-  <!-- One maintainer tag required, multiple allowed, one person per tag --> 
-  <!-- Example:  -->
-  <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="fairfax@todo.todo">fairfax</maintainer>
+  <description>The rosplan_interface_quadrotor package</description>
+  <maintainer email="fairf4x@gmail.com">fairf4x</maintainer>
 
 
   <!-- One license tag required, multiple allowed, one license per tag -->
@@ -19,7 +15,7 @@
   <!-- Url tags are optional, but mutiple are allowed, one per tag -->
   <!-- Optional attribute type can be: website, bugtracker, or repository -->
   <!-- Example: -->
-  <!-- <url type="website">http://wiki.ros.org/test_quadrotor</url> -->
+  <!-- <url type="website">http://wiki.ros.org/rosplan_interface_quadrotor</url> -->
 
 
   <!-- Author tags are optional, mutiple are allowed, one per tag -->

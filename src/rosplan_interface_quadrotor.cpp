@@ -38,7 +38,7 @@
 #include "rosplan_dispatch_msgs/ActionFeedback.h"
 #include "rosplan_knowledge_msgs/KnowledgeUpdateService.h"
 
-namespace test_quadrotor
+namespace rosplan_interface_quadrotor
 {
 
 class Quadrotor
@@ -305,14 +305,14 @@ public:
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "test_quadrotor");
+  ros::init(argc, argv, "rosplan_interface_quadrotor");
   ros::NodeHandle nh;
 
-  test_quadrotor::Quadrotor tq(nh);
+  rosplan_interface_quadrotor::Quadrotor tq(nh);
 
-  ros::Subscriber action_sub = nh.subscribe("/kcl_rosplan/action_dispatch", 1000, &test_quadrotor::Quadrotor::dispatchCallback, &tq);
+  ros::Subscriber action_sub = nh.subscribe("/kcl_rosplan/action_dispatch", 1000, &rosplan_interface_quadrotor::Quadrotor::dispatchCallback, &tq);
 
-  ros::Subscriber height_sub = nh.subscribe("/sonar_height", 1000, &test_quadrotor::Quadrotor::heightCallback, &tq);
+  ros::Subscriber height_sub = nh.subscribe("/sonar_height", 1000, &rosplan_interface_quadrotor::Quadrotor::heightCallback, &tq);
   
   ros::spin();
 
