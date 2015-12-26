@@ -20,9 +20,8 @@
     <arg name="trajectory_publish_rate" value="4"/> 
   </include>
   -->
-  
-  <node pkg="hector_exploration_node" type="exploration_planner_node" name="exploration_planner" />
-  <node pkg="hector_exploration_controller" type="simple_exploration_controller" name="exploration_controller" />
+ 
+  <node pkg="hector_move_base" type="quadrotor_navigation_server" name="nav_server"/> 
   
   <!-- Start rviz visualization with preset config -->
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hector_quadrotor_demo)/rviz_cfg/indoor_slam.rviz"/>

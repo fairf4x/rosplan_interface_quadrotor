@@ -7,6 +7,6 @@
     (grounded q1)
 )
 (:goal (and
-    (squaredone q1)
     (finished q1)
+    (squaredone q1)
 )))

@@ -28,15 +28,20 @@
 
 
 #include <ros/ros.h>
+#include <std_srvs/Empty.h>
 #include <geometry_msgs/Twist.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <sensor_msgs/Range.h> 
 #include <tf/LinearMath/Quaternion.h>
 #include <tf/LinearMath/Vector3.h>
-#include <hector_path_follower/hector_path_follower.h>
 #include <hector_nav_msgs/GetRobotTrajectory.h>
 #include "rosplan_dispatch_msgs/ActionDispatch.h"
 #include "rosplan_dispatch_msgs/ActionFeedback.h"
 #include "rosplan_knowledge_msgs/KnowledgeUpdateService.h"
+#include "mongodb_store/message_store.h"
+#include <actionlib/client/simple_action_client.h>
+#include <actionlib/server/simple_action_server.h>
+#include <hector_move_base/NavigateAction.h>
 
 namespace rosplan_interface_quadrotor
 {
@@ -48,6 +53,9 @@ private:
 
   // knowledge interface
   ros::ServiceClient update_knowledge_client;
+
+  // motor interface
+  ros::ServiceClient motor_service_client;
 
   // topic for publishing action feedback
   ros::Publisher feedback_publisher_;
@@ -63,12 +71,15 @@ private:
 
   float height_;
 
-  // flypose stuff
-  tf::TransformListener tfl_;
-  pose_follower::HectorPathFollower path_follower_;
+  // database - waypoints are retrieved from here
+  mongodb_store::MessageStoreProxy message_store;
+  
+  // action client for fly_to_waypoint
+  actionlib::SimpleActionClient<hector_move_base::NavigateAction> action_client;
 
   // method to add/remove simple predicate in the knowledge database
-  void oneVariablePredicate(std::string pred_name, std::string var_name, std::string var_value, const char& update){
+  void oneVariablePredicate(std::string pred_name, std::string var_name, std::string var_value, const char& update)
+  {
     rosplan_knowledge_msgs::KnowledgeUpdateService updatePredSrv;
     
     updatePredSrv.request.knowledge.knowledge_type = rosplan_knowledge_msgs::KnowledgeItem::FACT;
@@ -83,11 +94,27 @@ private:
     update_knowledge_client.call(updatePredSrv);
   }
 
-public:
-  Quadrotor(ros::NodeHandle &nh) : node_handle_(nh)
+  // helper function for feedback publishing
+  void publishFeedback(int action_id, std::string fbstat)
   {
+    rosplan_dispatch_msgs::ActionFeedback fb;
+    fb.action_id = action_id;
+    fb.status = fbstat;
+    feedback_publisher_.publish(fb);
+  }
+
+public:
+  Quadrotor(ros::NodeHandle &nh, std::string &actionserver) : node_handle_(nh), message_store(nh), action_client(actionserver,true)
+  {
+    ROS_INFO("hector_move_base: Waiting for nav action server to start.");
+    // wait for the action server to start
+    action_client.waitForServer(); //will wait for infinite time
+
     // initialize knowledge client - we will be updating KMS throuch service calls
     update_knowledge_client = nh.serviceClient<rosplan_knowledge_msgs::KnowledgeUpdateService>("/kcl_rosplan/update_knowledge_base");
+
+    // initialize motor client - this service is used for motor shutdown
+    motor_service_client = nh.serviceClient<std_srvs::Empty>("/shutdown");
 
     // initialize velocity publisher - we will send movement commands (geometry_msgs::Twist messages) through this
     velocity_publisher_ = node_handle_.advertise<geometry_msgs::Twist>("cmd_vel", 10);
@@ -96,9 +123,6 @@ public:
     feedback_publisher_ = node_handle_.advertise<rosplan_dispatch_msgs::ActionFeedback>("/kcl_rosplan/action_feedback", 10, true);
 
     height_ = -1; // should be updated in heightCallback
-
-    // hack for flypose function
-    path_follower_.initialize(&tfl_);
   }
 
   ~Quadrotor()
@@ -123,19 +147,15 @@ public:
     } else if (actionName.compare("flysquare") == 0)
     {
       flysquare(action_id);
-    } else if (actionName.compare("flypose") == 0)
+    } else if (actionName.compare("fly_to_waypoint") == 0)
     {
-      flypose();
+      fly_to_waypoint(msg);
     }
   }
 
   void takeoff(int action_id)
   {
-    // publish feedback (enabled)
-    rosplan_dispatch_msgs::ActionFeedback fb;
-    fb.action_id = action_id;
-    fb.status = "action enabled";
-    feedback_publisher_.publish(fb);
+    publishFeedback(action_id,"action enabled");
 
     ros::Rate loop_rate(0.25);
     ROS_INFO("Dispatching takeoff action.");
@@ -153,20 +173,13 @@ public:
     oneVariablePredicate("airborne","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
     oneVariablePredicate("grounded","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::REMOVE_KNOWLEDGE);
  
-    // publish feedback (achieved)
-    fb.action_id = action_id;
-    fb.status = "action achieved";
-    feedback_publisher_.publish(fb);
+    publishFeedback(action_id,"action achieved");
   }
 
   void land(int action_id)
   {
-    // publish feedback (enabled)
-    rosplan_dispatch_msgs::ActionFeedback fb;
-    fb.action_id = action_id;
-    fb.status = "action enabled";
-    feedback_publisher_.publish(fb);
-
+    publishFeedback(action_id,"action enabled");
+    
     ROS_INFO("Dispatching land action.");
     // publish message to start descent
     velocity_ = geometry_msgs::Twist();
@@ -182,10 +195,8 @@ public:
       ros::spinOnce();
     }
     
-    // publish message to stop
-    stop();
-    // shutdown motors
-    // call service /shutdown: rosservice call /shutdown "{}"
+    // stop drone and shutdown motors
+    emergency();
 
     ROS_INFO("Action land dispatched.");
 
@@ -194,19 +205,11 @@ public:
     oneVariablePredicate("grounded","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
     oneVariablePredicate("airborne","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::REMOVE_KNOWLEDGE);
 
-    // publish feedback (achieved)
-    fb.action_id = action_id;
-    fb.status = "action achieved";
-    feedback_publisher_.publish(fb);
+    publishFeedback(action_id,"action achieved");
   }
 
   void flysquare(int action_id){
-
-    // publish feedback (enabled)
-    rosplan_dispatch_msgs::ActionFeedback fb;
-    fb.action_id = action_id;
-    fb.status = "action enabled";
-    feedback_publisher_.publish(fb);
+    publishFeedback(action_id,"action enabled");
 
     ros::Rate loop_rate(0.5);
     ROS_INFO("Dispatching flysquare action.");
@@ -240,46 +243,66 @@ public:
     // update knowledge base
     oneVariablePredicate("squaredone","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
 
-    // publish feedback (achieved)
-    fb.action_id = action_id;
-    fb.status = "action achieved";
-    feedback_publisher_.publish(fb);
+    publishFeedback(action_id,"action achieved");
   }
 
-  void flypose()
-  {
-    // define pose
-    geometry_msgs::PoseStamped goal_pose;
-    goal_pose.header.frame_id = "map";
-    goal_pose.pose.position.x = 10;
-    goal_pose.pose.position.y = 10;
-    goal_pose.pose.position.z = 10;
 
-    // define orientation
-    tf::Quaternion quat(tf::Vector3(0., 0., 0.), M_PI);
-    goal_pose.pose.orientation.w = quat.w();
-    goal_pose.pose.orientation.x = quat.x();
-    goal_pose.pose.orientation.y = quat.y();
-    goal_pose.pose.orientation.z = quat.z();
-    
-    std::vector<geometry_msgs::PoseStamped> path;
-    path.push_back(goal_pose);
-    path.push_back(goal_pose);
+  void fly_to_waypoint(const rosplan_dispatch_msgs::ActionDispatch::ConstPtr& msg){
+    // get action id - for feedback publishing    
+    int action_id = msg->action_id;
 
-    // fly there
-    path_follower_.setPlan(path);
-    
-    // start navigation
-    ros::Rate loop_rate(10);
-    ROS_INFO("starting test loop");
-    while(ros::ok()) {
-      geometry_msgs::Twist twist;
-      path_follower_.computeVelocityCommands(twist);
-      velocity_publisher_.publish(twist);
-      ros::spinOnce();
-      loop_rate.sleep();
+    // get waypoint ID from action dispatch
+    std::string wpID;
+    bool found = false;
+    for(size_t i=0; i<msg->parameters.size(); i++) {
+      if(0==msg->parameters[i].key.compare("to")) {
+        wpID = msg->parameters[i].value;
+        found = true;
+      }
+    }
+    if(!found) {
+      ROS_INFO("ERROR: (hector_move_base) aborting action dispatch; malformed parameters");
+      return;
     }
 
+    // get pose from message store
+    std::vector< boost::shared_ptr<geometry_msgs::PoseStamped> > results;
+    if(message_store.queryNamed<geometry_msgs::PoseStamped>(wpID, results)) {
+      if(results.size()<1) {
+        ROS_INFO("ERROR: (hector_move_base) aborting action dispatch; no matching wpID %s", wpID.c_str());
+        return;
+      }
+      if(results.size()>1)
+        ROS_INFO("ERROR: (hector_move_base) multiple waypoints share the same wpID");
+      
+      // dispatch MoveBase action
+      hector_move_base::NavigateGoal goal;
+      geometry_msgs::PoseStamped &pst = *results[0];
+      goal.end.x = pst.pose.position.x;
+      goal.end.y = pst.pose.position.y;
+
+      publishFeedback(action_id,"action enabled");
+
+      // call action server to navigate to waypoint
+      action_client.sendGoalAndWait(goal);
+      if (action_client.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
+      {
+          ROS_INFO("Navigate action is completed!");
+          // update knowledge base
+          /*
+          oneVariablePredicate("finished","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
+          oneVariablePredicate("grounded","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
+          oneVariablePredicate("airborne","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::REMOVE_KNOWLEDGE);
+          */
+
+          publishFeedback(action_id,"action achieved");
+      }
+      else
+      {
+          publishFeedback(action_id,"action failed");
+          ROS_ERROR("Navigate action failed!");
+      }
+    }
   }
 
   // process messages received from sonar
@@ -290,6 +313,14 @@ public:
     height_ = msg->range;
   }
 
+  void emergency()
+  {
+    // publish message to stop
+    stop();
+    // shutdown motors
+    shutdown();
+  }
+
   void stop()
   {
     if(velocity_publisher_.getNumSubscribers() > 0)
@@ -298,9 +329,17 @@ public:
       velocity_publisher_.publish(velocity_); // sending stop message
     }
   }
+
+  void shutdown()
+  {
+    // call shutdown service with empty service to shutdown motors
+    std_srvs::Empty empty;
+    motor_service_client.call(empty); 
+  }
+
 };
 
-} // namespace test_quadrotor
+} // namespace rosplan_interface_quadrotor
 
 
 int main(int argc, char **argv)
@@ -308,11 +347,15 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "rosplan_interface_quadrotor");
   ros::NodeHandle nh;
 
-  rosplan_interface_quadrotor::Quadrotor tq(nh);
+  // initialize actionserver name by request to ROS parameter server
+	std::string actionserver;
+	nh.param("nav_server", actionserver, std::string("/nav_server"));
 
-  ros::Subscriber action_sub = nh.subscribe("/kcl_rosplan/action_dispatch", 1000, &rosplan_interface_quadrotor::Quadrotor::dispatchCallback, &tq);
+  rosplan_interface_quadrotor::Quadrotor quad_iface(nh,actionserver);
 
-  ros::Subscriber height_sub = nh.subscribe("/sonar_height", 1000, &rosplan_interface_quadrotor::Quadrotor::heightCallback, &tq);
+  ros::Subscriber action_sub = nh.subscribe("/kcl_rosplan/action_dispatch", 1000, &rosplan_interface_quadrotor::Quadrotor::dispatchCallback, &quad_iface);
+
+  ros::Subscriber height_sub = nh.subscribe("/sonar_height", 1000, &rosplan_interface_quadrotor::Quadrotor::heightCallback, &quad_iface);
   
   ros::spin();
 
