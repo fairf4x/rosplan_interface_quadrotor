@@ -13,6 +13,8 @@ find_package(catkin REQUIRED COMPONENTS
     mongodb_store
     actionlib
     geometry_msgs
+    rosplan_dispatch_msgs
+    hector_move_base
 )
 
 catkin_package()
