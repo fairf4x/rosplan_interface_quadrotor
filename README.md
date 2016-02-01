@@ -21,6 +21,7 @@ sudo apt-get install ros-indigo-hector-quadrotor-demo
 Get the code:
 ```sh
 cd src/
+git clone https://github.com/fairf4x/hector_move_base.git
 git clone https://github.com/fairf4x/ROSPlan_interface_quadrotor.git
 ```
 Compile everything:

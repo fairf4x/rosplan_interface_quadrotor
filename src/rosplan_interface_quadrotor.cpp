@@ -74,7 +74,7 @@ private:
   // database - waypoints are retrieved from here
   mongodb_store::MessageStoreProxy message_store;
   
-  // action client for fly_to_waypoint
+  // action client for fly_waypoint
   actionlib::SimpleActionClient<hector_move_base::NavigateAction> action_client;
 
   // method to add/remove simple predicate in the knowledge database
@@ -170,9 +170,9 @@ public:
     } else if (actionName.compare("flysquare") == 0)
     {
       flysquare(action_id);
-    } else if (actionName.compare("fly_to_waypoint") == 0)
+    } else if (actionName.compare("fly_waypoint") == 0)
     {
-      fly_to_waypoint(msg);
+      fly_waypoint(msg);
     }
   }
 
@@ -270,7 +270,7 @@ public:
   }
 
 
-  void fly_to_waypoint(const rosplan_dispatch_msgs::ActionDispatch::ConstPtr& msg){
+  void fly_waypoint(const rosplan_dispatch_msgs::ActionDispatch::ConstPtr& msg){
     // get action id - for feedback publishing    
     int action_id = msg->action_id;
 
