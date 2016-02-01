@@ -93,6 +93,29 @@ private:
     
     update_knowledge_client.call(updatePredSrv);
   }
+ 
+   // method to add/remove simple predicate in the knowledge database
+  void twoVariablePredicate(std::string pred_name, std::string var1_name, std::string var1_value, std::string var2_name, std::string var2_value, const char& update)
+  {
+    rosplan_knowledge_msgs::KnowledgeUpdateService updatePredSrv;
+    
+    updatePredSrv.request.knowledge.knowledge_type = rosplan_knowledge_msgs::KnowledgeItem::FACT;
+    updatePredSrv.request.update_type = update;
+    updatePredSrv.request.knowledge.attribute_name = pred_name;
+    
+    diagnostic_msgs::KeyValue pair1;
+    pair1.key = var1_name;
+    pair1.value = var1_value;
+    updatePredSrv.request.knowledge.values.push_back(pair1);
+
+    diagnostic_msgs::KeyValue pair2;
+    pair2.key = var2_name;
+    pair2.value = var2_value;
+    updatePredSrv.request.knowledge.values.push_back(pair2);
+    
+    update_knowledge_client.call(updatePredSrv);
+  }
+
 
   // helper function for feedback publishing
   void publishFeedback(int action_id, std::string fbstat)
@@ -261,39 +284,42 @@ public:
       }
     }
     if(!found) {
-      ROS_INFO("ERROR: (hector_move_base) aborting action dispatch; malformed parameters");
+      ROS_INFO("ERROR: (rosplan_interface_quadrotor) aborting action dispatch; malformed parameters");
       return;
     }
 
-    // get pose from message store
+    // get pose from message store 
     std::vector< boost::shared_ptr<geometry_msgs::PoseStamped> > results;
     if(message_store.queryNamed<geometry_msgs::PoseStamped>(wpID, results)) {
       if(results.size()<1) {
-        ROS_INFO("ERROR: (hector_move_base) aborting action dispatch; no matching wpID %s", wpID.c_str());
+        ROS_INFO("ERROR: (rosplan_interface_quadrotor) aborting action dispatch; no matching wpID %s", wpID.c_str());
         return;
       }
       if(results.size()>1)
-        ROS_INFO("ERROR: (hector_move_base) multiple waypoints share the same wpID");
-      
+        ROS_INFO("ERROR: (rosplan_interface_quadrotor) multiple waypoints share the same wpID");
+     
+      const char* wpTo = wpID.c_str();
+ 
+      ROS_INFO("INFO: (rosplan_interface_quadrotor): navigating to waypoint %s", wpTo);
       // dispatch MoveBase action
       hector_move_base::NavigateGoal goal;
       geometry_msgs::PoseStamped &pst = *results[0];
       goal.end.x = pst.pose.position.x;
       goal.end.y = pst.pose.position.y;
 
-      publishFeedback(action_id,"action enabled");
-
       // call action server to navigate to waypoint
       action_client.sendGoalAndWait(goal);
+
+      publishFeedback(action_id,"action enabled");
+
       if (action_client.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
       {
           ROS_INFO("Navigate action is completed!");
           // update knowledge base
-          /*
-          oneVariablePredicate("finished","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
-          oneVariablePredicate("grounded","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
-          oneVariablePredicate("airborne","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::REMOVE_KNOWLEDGE);
-          */
+          twoVariablePredicate("visited","q","q1","w",wpTo,rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
+          // we do not have to specify 2nd argument of at_waypoint predicate when removing
+          oneVariablePredicate("at_waypoint","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::REMOVE_KNOWLEDGE);
+          twoVariablePredicate("at_waypoint","q","q1","w",wpTo,rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
 
           publishFeedback(action_id,"action achieved");
       }
@@ -304,6 +330,7 @@ public:
       }
     }
   }
+
 
   // process messages received from sonar
   // -> range = 0.17 if landed
