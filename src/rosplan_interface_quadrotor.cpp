@@ -39,9 +39,6 @@
 #include "rosplan_dispatch_msgs/ActionFeedback.h"
 #include "rosplan_knowledge_msgs/KnowledgeUpdateService.h"
 #include "mongodb_store/message_store.h"
-#include <actionlib/client/simple_action_client.h>
-#include <actionlib/server/simple_action_server.h>
-#include <hector_move_base/NavigateAction.h>
 
 namespace rosplan_interface_quadrotor
 {
@@ -74,9 +71,6 @@ private:
   // database - waypoints are retrieved from here
   mongodb_store::MessageStoreProxy message_store;
   
-  // action client for fly_waypoint
-  actionlib::SimpleActionClient<hector_move_base::NavigateAction> action_client;
-
   // method to add/remove simple predicate in the knowledge database
   void oneVariablePredicate(std::string pred_name, std::string var_name, std::string var_value, const char& update)
   {
@@ -127,12 +121,8 @@ private:
   }
 
 public:
-  Quadrotor(ros::NodeHandle &nh, std::string &actionserver) : node_handle_(nh), message_store(nh), action_client(actionserver,true)
+  Quadrotor(ros::NodeHandle &nh, std::string &actionserver) : node_handle_(nh), message_store(nh)
   {
-    ROS_INFO("hector_move_base: Waiting for nav action server to start.");
-    // wait for the action server to start
-    action_client.waitForServer(); //will wait for infinite time
-
     // initialize knowledge client - we will be updating KMS throuch service calls
     update_knowledge_client = nh.serviceClient<rosplan_knowledge_msgs::KnowledgeUpdateService>("/kcl_rosplan/update_knowledge_base");
 
@@ -170,9 +160,6 @@ public:
     } else if (actionName.compare("flysquare") == 0)
     {
       flysquare(action_id);
-    } else if (actionName.compare("fly_waypoint") == 0)
-    {
-      fly_waypoint(msg);
     }
   }
 
@@ -268,69 +255,6 @@ public:
 
     publishFeedback(action_id,"action achieved");
   }
-
-
-  void fly_waypoint(const rosplan_dispatch_msgs::ActionDispatch::ConstPtr& msg){
-    // get action id - for feedback publishing    
-    int action_id = msg->action_id;
-
-    // get waypoint ID from action dispatch
-    std::string wpID;
-    bool found = false;
-    for(size_t i=0; i<msg->parameters.size(); i++) {
-      if(0==msg->parameters[i].key.compare("to")) {
-        wpID = msg->parameters[i].value;
-        found = true;
-      }
-    }
-    if(!found) {
-      ROS_INFO("ERROR: (rosplan_interface_quadrotor) aborting action dispatch; malformed parameters");
-      return;
-    }
-
-    // get pose from message store 
-    std::vector< boost::shared_ptr<geometry_msgs::PoseStamped> > results;
-    if(message_store.queryNamed<geometry_msgs::PoseStamped>(wpID, results)) {
-      if(results.size()<1) {
-        ROS_INFO("ERROR: (rosplan_interface_quadrotor) aborting action dispatch; no matching wpID %s", wpID.c_str());
-        return;
-      }
-      if(results.size()>1)
-        ROS_INFO("ERROR: (rosplan_interface_quadrotor) multiple waypoints share the same wpID");
-     
-      const char* wpTo = wpID.c_str();
- 
-      ROS_INFO("INFO: (rosplan_interface_quadrotor): navigating to waypoint %s", wpTo);
-      // dispatch MoveBase action
-      hector_move_base::NavigateGoal goal;
-      geometry_msgs::PoseStamped &pst = *results[0];
-      goal.end.x = pst.pose.position.x;
-      goal.end.y = pst.pose.position.y;
-
-      // call action server to navigate to waypoint
-      action_client.sendGoalAndWait(goal);
-
-      publishFeedback(action_id,"action enabled");
-
-      if (action_client.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
-      {
-          ROS_INFO("Navigate action is completed!");
-          // update knowledge base
-          twoVariablePredicate("visited","q","q1","w",wpTo,rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
-          // we do not have to specify 2nd argument of at_waypoint predicate when removing
-          oneVariablePredicate("at_waypoint","q","q1",rosplan_knowledge_msgs::KnowledgeUpdateService::Request::REMOVE_KNOWLEDGE);
-          twoVariablePredicate("at_waypoint","q","q1","w",wpTo,rosplan_knowledge_msgs::KnowledgeUpdateService::Request::ADD_KNOWLEDGE);
-
-          publishFeedback(action_id,"action achieved");
-      }
-      else
-      {
-          publishFeedback(action_id,"action failed");
-          ROS_ERROR("Navigate action failed!");
-      }
-    }
-  }
-
 
   // process messages received from sonar
   // -> range = 0.17 if landed
